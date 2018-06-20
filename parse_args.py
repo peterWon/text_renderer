@@ -15,7 +15,7 @@ def parse_args():
     parser.add_argument('--chars_file', type=str, default='./data/chars/chn.txt')
     parser.add_argument('--config_file', type=str, default='./configs/default.yaml')
 
-    parser.add_argument('--corpus_mode', type=str, default='chn', choices=['random', 'chn', 'eng'],
+    parser.add_argument('--corpus_mode', type=str, default='random', choices=['random', 'chn', 'eng'],
                         help='Different corpus type have different load/get_sample method')
     parser.add_argument('--fonts_dir', type=str, default='./data/fonts/chn')
     parser.add_argument('--bg_dir', type=str, default='./data/bg')
@@ -32,13 +32,16 @@ def parse_args():
                         help="Number of processes to generate image. If None, use all cpu cores")
 
     flags, _ = parser.parse_known_args()
-    flags.save_dir = os.path.join(flags.output_dir, flags.tag)
+    flags.img_save_dir = os.path.join(flags.output_dir, 'JPEGImages')
+    flags.xml_save_dir = os.path.join(flags.output_dir, 'Annotations')
 
     if os.path.exists(flags.bg_dir):
         num_bg = len(os.listdir(flags.bg_dir))
         flags.num_bg = num_bg
 
-    if not os.path.exists(flags.save_dir):
-        os.makedirs(flags.save_dir)
+    if not os.path.exists(flags.img_save_dir):
+        os.makedirs(flags.img_save_dir)
+    if not os.path.exists(flags.xml_save_dir):
+        os.makedirs(flags.xml_save_dir)
 
     return flags

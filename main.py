@@ -20,6 +20,7 @@ import libs.font_utils as font_utils
 from textrenderer.corpus import RandomCorpus, ChnCorpus, EngCorpus
 from textrenderer.renderer import Renderer
 from tenacity import retry
+from libs.pascal_voc_io import *
 
 lock = mp.Lock()
 counter = mp.Value('i', 0)
@@ -39,6 +40,8 @@ bgs = utils.load_bgs(flags.bg_dir)
 
 corpus_class = corpus_classes[flags.corpus_mode]
 corpus = corpus_class(chars_file=flags.chars_file, corpus_dir=flags.corpus_dir, length=flags.length)
+charset = corpus.get_charset()
+char2int = dict(zip(charset, range(len(charset))))
 
 renderer = Renderer(corpus, fonts, bgs, cfg,
                     height=flags.img_height,
@@ -81,13 +84,25 @@ def generate_img(img_index, q):
     # Make sure different process has different random seed
     np.random.seed()
 
-    im, word = gen_img_retry(renderer)
+    im, word, pts = gen_img_retry(renderer)
 
     base_name = '{:08d}'.format(img_index)
 
     if not flags.viz:
-        fname = os.path.join(flags.save_dir, base_name + '.jpg')
+        fname = os.path.join(flags.img_save_dir, base_name + '.jpg')
         cv2.imwrite(fname, im)
+
+        # write to voc.
+        xmlname = os.path.join(flags.xml_save_dir, base_name + '.xml')
+        voc_xml = PascalVocWriter(os.path.dirname(fname), base_name + '.jpg', im.shape)
+        for index, char in enumerate(word):
+            rc = cv2.boundingRect(np.array([pts[4*index], pts[4*index+1], pts[4*index+2],pts[4*index+3]]))
+            left, top = rc[0], rc[1]
+            right, bot = rc[0] + rc[2], rc[1] + rc[3]
+
+            # print(char, left, top, right, bot)
+            voc_xml.addBndBox(int(left), int(top), int(right), int(bot), char)#str(char2int[char])
+        voc_xml.save(xmlname)
 
         label = "{} {}".format(base_name, word)
         q.put(label)
@@ -119,24 +134,33 @@ def restore_exist_labels(save_dir, label_path):
     # 如果目标目录存在 labels.txt 则向该目录中追加图片
     start_index = 0
     if os.path.exists(label_path):
-        print('Generate more text images in %s' % flags.save_dir)
+        print('Generate more text images in %s' % flags.output_dir)
         start_index = len(utils.load_chars(label_path))
     else:
-        print('Generate text images in %s' % flags.save_dir)
+        print('Generate text images in %s' % flags.output_dir)
     return start_index
 
+def write_labelmap(fpath, char2int):
+    with open(fpath, 'w') as ofile:
+        for k, val in char2int.items():
+            ofile.writelines(k + '\n')
+
+def write_freq(fpath, charset_freq):
+    with open(fpath, 'w') as ofile:
+        for k, val in charset_freq.items():
+            ofile.writelines(k+' '+str(val)+'\n')
 
 if __name__ == "__main__":
     if flags.viz == 1:
         flags.num_processes = 1
 
-    tmp_label_path = os.path.join(flags.save_dir, 'tmp_labels.txt')
-    label_path = os.path.join(flags.save_dir, 'labels.txt')
+    tmp_label_path = os.path.join(flags.output_dir, 'tmp_labels.txt')
+    label_path = os.path.join(flags.output_dir, 'labels.txt')
 
     manager = mp.Manager()
     q = manager.Queue()
 
-    start_index = restore_exist_labels(flags.save_dir, label_path)
+    start_index = restore_exist_labels(flags.output_dir, label_path)
 
     timer = Timer(Timer.SECOND)
     timer.start()
@@ -153,3 +177,6 @@ if __name__ == "__main__":
 
     if not flags.viz:
         sort_labels(tmp_label_path, label_path)
+
+    write_labelmap(fpath = os.path.join(flags.output_dir, '..', 'classes_name.txt'), char2int = char2int)
+    write_freq(fpath = os.path.join(flags.output_dir, '..', 'frequency.txt'), charset_freq = renderer.corpus.get_frequency())

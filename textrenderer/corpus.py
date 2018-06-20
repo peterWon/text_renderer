@@ -14,6 +14,10 @@ class Corpus(object):
         self.chars_file = chars_file
         self.charsets = load_chars(chars_file)
 
+        # wz
+        self.frequency = {}
+        for char in self.charsets: self.frequency.update({char: 0})
+
         if not isinstance(self, RandomCorpus):
             print("Loading corpus from: " + self.corpus_dir)
 
@@ -34,20 +38,29 @@ class Corpus(object):
         """
         pass
 
+    # wz
+    def get_frequency(self):
+        return self.frequency
+
+    def get_charset(self):
+        return self.frequency
+
 
 class RandomCorpus(Corpus):
     """
     Load charsets and generate random word line from charsets
     """
-
     def load(self):
         pass
 
     def get_sample(self):
         word = ''
         for _ in range(self.length):
-            word += random.choice(self.charsets)
+            char = random.choice(self.charsets)
+            word += char
+            self.frequency[char] += 1
         return word
+
 
 
 class EngCorpus(Corpus):
@@ -72,6 +85,7 @@ class EngCorpus(Corpus):
         word2 = random.choice(self.corpus)
 
         word = ' '.join([word1, word2])
+        for char in word: self.frequency[char] += 1 #wz
         return word
 
 
@@ -116,4 +130,5 @@ class ChnCorpus(Corpus):
         start = np.random.randint(0, len(line) - self.length)
 
         word = line[start:start + self.length]
+        for char in word: self.frequency[char] += 1 #wz
         return word

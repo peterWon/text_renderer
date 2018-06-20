@@ -54,14 +54,15 @@ def draw_box(img, pnts, color):
 
     thickness = 1
     linetype = cv2.LINE_AA
-    cv2.line(dst, (pnts[0][0], pnts[0][1]), (pnts[1][0], pnts[1][1]), color=color, thickness=thickness,
-             lineType=linetype)
-    cv2.line(dst, (pnts[1][0], pnts[1][1]), (pnts[2][0], pnts[2][1]), color=color, thickness=thickness,
-             lineType=linetype)
-    cv2.line(dst, (pnts[2][0], pnts[2][1]), (pnts[3][0], pnts[3][1]), color=color, thickness=thickness,
-             lineType=linetype)
-    cv2.line(dst, (pnts[3][0], pnts[3][1]), (pnts[0][0], pnts[0][1]), color=color, thickness=thickness,
-             lineType=linetype)
+    for i in range(len(pnts) // 4): #每一个字符四个点
+        cv2.line(dst, (pnts[4*i+0][0], pnts[4*i+0][1]), (pnts[4*i+1][0], pnts[4*i+1][1]), color=color, thickness=thickness,
+                 lineType=linetype)
+        cv2.line(dst, (pnts[4*i+1][0], pnts[4*i+1][1]), (pnts[4*i+2][0], pnts[4*i+2][1]), color=color, thickness=thickness,
+                 lineType=linetype)
+        cv2.line(dst, (pnts[4*i+2][0], pnts[4*i+2][1]), (pnts[4*i+3][0], pnts[4*i+3][1]), color=color, thickness=thickness,
+                 lineType=linetype)
+        cv2.line(dst, (pnts[4*i+3][0], pnts[4*i+3][1]), (pnts[4*i+0][0], pnts[4*i+0][1]), color=color, thickness=thickness,
+                 lineType=linetype)
     return dst
 
 

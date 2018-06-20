@@ -40,25 +40,24 @@ class Renderer(object):
         # to make sure we can crop full word image after apply perspective
         bg = self.gen_bg(width=word_size[0] * 8, height=word_size[1] * 8)
 
-        word_img, text_box_pnts, word_color = self.draw_text_on_bg(word, font, bg)
+        word_img, char_pnts, text_box_pnts, word_color = self.draw_text_on_bg_char_pts(word, font, bg)
 
         if self.cfg.line.enable and prob(self.cfg.line.fraction):
             word_img, text_box_pnts = self.liner.apply(word_img, text_box_pnts, word_color)
 
-        word_img, img_pnts_transformed, text_box_pnts_transformed = \
-            self.apply_perspective_transform(word_img, text_box_pnts,
+        word_img, img_pnts_transformed, char_pnts_transformed = \
+            self.apply_perspective_transform(word_img, char_pnts,
                                              max_x=self.cfg.perspective_transform.max_x,
                                              max_y=self.cfg.perspective_transform.max_y,
                                              max_z=self.cfg.perspective_transform.max_z,
                                              gpu=self.gpu)
-
         if self.debug:
             word_img = draw_box(word_img, img_pnts_transformed, (0, 255, 0))
-            word_img = draw_box(word_img, text_box_pnts_transformed, (0, 0, 255))
-            _, crop_bbox = self.crop_img(word_img, text_box_pnts_transformed)
-            word_img = draw_bbox(word_img, crop_bbox, (255, 0, 0))
+            word_img = draw_box(word_img, char_pnts_transformed, (0, 0, 255))
+            # _, crop_bbox = self.crop_img(word_img, char_pnts_transformed)
+            # word_img = draw_bbox(word_img, crop_bbox, (255, 0, 0))
         else:
-            word_img, crop_bbox = self.crop_img(word_img, text_box_pnts_transformed)
+            word_img, char_pnts_transformed = self.crop_img(word_img, char_pnts_transformed)
 
         if self.cfg.noise.enable and prob(self.cfg.noise.fraction):
             word_img = np.clip(word_img, 0., 255.)
@@ -74,7 +73,8 @@ class Renderer(object):
                 word_img = self.apply_prydown(word_img)
 
         word_img = np.clip(word_img, 0., 255.)
-        return word_img, word
+
+        return word_img, word, char_pnts_transformed
 
     def random_xy_offset(self, src_height, src_width, dst_height, dst_width):
         y_max_offset = 0
@@ -138,10 +138,15 @@ class Renderer(object):
 
         # It's important do crop first and than do resize for speed consider
         dst = img[dst_bbox[1]:dst_bbox[1] + dst_bbox[3], dst_bbox[0]:dst_bbox[0] + dst_bbox[2]]
-
+        sc_w, sc_h = self.out_width / dst.shape[1], self.out_height / dst.shape[0]
         dst = cv2.resize(dst, (self.out_width, self.out_height), interpolation=cv2.INTER_CUBIC)
 
-        return dst, dst_bbox
+        offseted_pts = []
+        for pt in text_box_pnts_transformed:
+            offseted_pts.append([int_around(((pt[0] / scale - x_offset) * scale - dst_bbox[0]) * sc_w) ,
+                                 int_around(((pt[1] / scale - y_offset) * scale - dst_bbox[1]) * sc_h)])
+
+        return dst, offseted_pts
 
     def draw_text_on_bg(self, word, font, bg):
         """
@@ -184,6 +189,70 @@ class Renderer(object):
         ]
 
         return np_img, text_box_pnts, word_color
+
+    def draw_text_on_bg_char_pts(self, word, font, bg):
+        """
+        Draw word in the center of background
+        :param word: word to draw
+        :param font: font to draw word
+        :param bg: background numpy image
+        :return:
+            np_img: word image
+            text_box_pnts: left-top, right-top, right-bottom, left-bottom
+        """
+        bg_height = bg.shape[0]
+        bg_width = bg.shape[1]
+
+        word_size = self.get_word_size(font, word)
+        word_height = word_size[1]
+        word_width = word_size[0]
+
+        offset = font.getoffset(word)
+
+        pil_img = Image.fromarray(np.uint8(bg))
+        draw = ImageDraw.Draw(pil_img)
+
+        # Draw text in the center of bg
+        text_x = int((bg_width - word_width) / 2)
+        text_y = int((bg_height - word_height) / 2)
+
+        bg_mean = int(np.mean(bg))
+        word_color = random.randint(0, int(bg_mean / 3 * 2))
+
+        draw.text((text_x - offset[0], text_y - offset[1]), word, fill=word_color, font=font)
+
+        np_img = np.array(pil_img).astype(np.float32)
+
+        chars_box_pnts = []
+        x, y = text_x, text_y
+
+        maxh = 0
+        for char in word:
+            char_offset = font.getoffset(char)
+            char_size = font.getsize(char)
+            char_size = (char_size[0] - char_offset[0], char_size[1] - char_offset[1])
+            maxh = max(char_size[1],  maxh)
+
+        for char in word:
+            char_offset = font.getoffset(char)
+            char_size = font.getsize(char)
+            char_size = (char_size[0] - char_offset[0], char_size[1] - char_offset[1])
+
+            h, w = char_size[1], char_size[0]
+
+            chars_box_pnts.append([x, y])
+            chars_box_pnts.append([x + w, y])
+            chars_box_pnts.append([x + w, y + maxh])
+            chars_box_pnts.append([x, y + maxh])
+            x += w
+
+        text_box_pnts = [
+            [text_x, text_y],
+            [text_x + word_width, text_y],
+            [text_x + word_width, text_y + word_height],
+            [text_x, text_y + word_height]
+        ]
+        return np_img, chars_box_pnts, text_box_pnts, word_color
 
     def gen_bg(self, width, height):
         if prob(0.5):
@@ -315,9 +384,9 @@ class Renderer(object):
         """
         模糊图像，模拟小图片放大的效果
         """
-        scale = random.uniform(1, 2.2)
+        scale = random.uniform(1, 1.5)
         height = img.shape[0]
         width = img.shape[1]
 
         out = cv2.resize(img, (int(width / scale), int(height / scale)), interpolation=cv2.INTER_AREA)
-        return cv2.resize(out, (width, height), interpolation=cv2.INTER_AREA)
+        return cv2.resize(out, (width, height), interpolation = cv2.INTER_AREA)
